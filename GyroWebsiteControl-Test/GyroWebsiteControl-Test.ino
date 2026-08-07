@@ -815,9 +815,9 @@ void configureWebServer() {
 bool initializeImu() {
   Serial.println("Starting MPU6050...");
 
-  if (!mpu.begin(0x68, &sensorBus)) {
+  while (!mpu.begin(0x68, &sensorBus)) {
     Serial.println("ERROR: MPU6050 not detected.");
-    return false;
+    delay(1000);
   }
 
   mpu.setAccelerometerRange(
