@@ -145,22 +145,32 @@ void handleSettings() {
 
 void configureWebServer() {
   server.on("/", HTTP_GET, handleRoot);
+
   server.on("/api/status", HTTP_GET, handleStatus);
   server.on("/api/enable", HTTP_POST, handleEnable);
   server.on("/api/disable", HTTP_POST, handleDisable);
   server.on("/api/rezero", HTTP_POST, handleRezero);
   server.on("/api/stop", HTTP_POST, handleEmergencyStop);
-  server.on(
-      "/api/clearstop",
-      HTTP_POST,
-      handleClearEmergencyStop
-  );
+  server.on("/api/clearstop", HTTP_POST, handleClearEmergencyStop);
   server.on("/api/settings", HTTP_POST, handleSettings);
+
+  server.on("/test", HTTP_GET, []() {
+    Serial.println("Received request for /test");
+    server.send(200, "text/plain", "ESP32 HTTP SERVER WORKS!");
+  });
 
   server.onNotFound([]() {
     server.send(404, "text/plain", "Not found");
   });
 
   server.begin();
-  Serial.println("Web server started.");
+
+  Serial.println("HTTP server started!");
+
+  Serial.print("Website: http://");
+  Serial.println(WiFi.localIP());
+
+  Serial.print("Test: http://");
+  Serial.print(WiFi.localIP());
+  Serial.println("/test");
 }

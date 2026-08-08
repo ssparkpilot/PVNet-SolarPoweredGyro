@@ -4,7 +4,8 @@
 // ============================================================
 
 void configureMotor() {
-  motorSensor.init(&Wire);
+  I2C_AS5600.begin(AS5600_SDA_PIN, AS5600_SCL_PIN, 400000);
+  motorSensor.init(&I2C_AS5600);
   motor.linkSensor(&motorSensor);
 
   driver.voltage_power_supply = DRIVER_SUPPLY_VOLTAGE;

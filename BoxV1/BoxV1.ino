@@ -26,6 +26,7 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <SimpleFOC.h>
+#include <ESPmDNS.h>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 
@@ -57,8 +58,10 @@ constexpr int MOTOR_IN3_PIN = 4;
 constexpr int MOTOR_EN_PIN  = 5;
 
 // I2C pins
-constexpr int I2C_SDA_PIN = 21;
-constexpr int I2C_SCL_PIN = 22;
+constexpr int IMU_SDA_PIN = 21;
+constexpr int IMU_SCL_PIN = 22;
+constexpr int AS5600_SDA_PIN = 32;
+constexpr int AS5600_SCL_PIN = 33;
 
 // Motor supply voltage.
 // Set this to the actual motor-driver supply voltage.
@@ -66,7 +69,7 @@ constexpr float DRIVER_SUPPLY_VOLTAGE = 12.0f;
 
 // Maximum voltage that the controller may apply to the motor.
 // Start low during testing.
-constexpr float MOTOR_VOLTAGE_LIMIT = 2.0f;
+constexpr float MOTOR_VOLTAGE_LIMIT = 0.5f;
 
 // Reaction-wheel overspeed limit.
 constexpr float MAX_WHEEL_SPEED_RAD_S = 100.0f;
@@ -100,6 +103,12 @@ BLDCDriver3PWM driver = BLDCDriver3PWM(
     MOTOR_IN3_PIN,
     MOTOR_EN_PIN
 );
+
+// ============================================================
+// ENCODER I2C BUS
+// ============================================================
+
+TwoWire I2C_AS5600 = TwoWire(1);
 
 // ============================================================
 // CONTROL VARIABLES
@@ -138,8 +147,8 @@ uint32_t previousControlMicros = 0;
 uint32_t previousImuMicros = 0;
 uint32_t previousTelemetryMillis = 0;
 
-constexpr uint32_t CONTROL_PERIOD_US = 2000;  // 500 Hz
-constexpr uint32_t IMU_PERIOD_US = 2000;      // 500 Hz
+constexpr uint32_t CONTROL_PERIOD_US = 20000;  // 50 Hz
+constexpr uint32_t IMU_PERIOD_US = 20000;      // 50 Hz. These need to be areound 50 hz each to not overload the website data transfer rate
 
 // Gyro filter. Larger value = more responsive but noisier.
 constexpr float GYRO_FILTER_ALPHA = 0.20f;
@@ -452,12 +461,12 @@ void setup() {
   delay(1000);
 
   Serial.println();
-  Serial.println("Reaction-wheel stabilizer starting.");
+  Serial.println("Reaction Wheel Stabilizer starting...");
 
-  Wire.begin(I2C_SDA_PIN, I2C_SCL_PIN, 400000);
+  Wire.begin(IMU_SDA_PIN, IMU_SCL_PIN, 400000);
 
   if (!mpu.begin(0x68, &Wire)) {
-    Serial.println("MPU6050 was not found.");
+    Serial.println("MPU6050 not found!");
 
     while (true) {
       delay(1000);
@@ -469,15 +478,21 @@ void setup() {
   mpu.setFilterBandwidth(MPU6050_BAND_44_HZ);
 
   calibrateGyro();
-  configureMotor();
+
   connectWiFi();
+
   configureWebServer();
+
+  configureMotor();
 
   previousControlMicros = micros();
   previousImuMicros = previousControlMicros;
+  previousTelemetryMillis = millis();
 
   Serial.println("System ready.");
-  Serial.println("Stabilization starts disabled.");
+
+  Serial.print("Open http://");
+  Serial.println(WiFi.localIP());
 }
 
 // ============================================================
@@ -485,74 +500,37 @@ void setup() {
 // ============================================================
 
 void loop() {
-  /*
-    These must run as frequently as possible. Do not add long delays here.
-  */
+  // Handle website requests
+  server.handleClient();
+
+  // Run SimpleFOC using the AS5600 on the second I2C bus
   motor.loopFOC();
 
   uint32_t nowMicros = micros();
 
-  if (
-      static_cast<uint32_t>(
-          nowMicros - previousImuMicros
-      ) >= IMU_PERIOD_US
-  ) {
+  // Update MPU6050 at 50 Hz
+  if ((uint32_t)(nowMicros - previousImuMicros) >= IMU_PERIOD_US) {
     float dt =
-        static_cast<float>(
-            nowMicros - previousImuMicros
-        ) * 1.0e-6f;
+        (float)(nowMicros - previousImuMicros) * 1.0e-6f;
 
     previousImuMicros = nowMicros;
 
-    // Reject abnormal timing caused by startup or blocking operations.
-    dt = clampValue(dt, 0.0005f, 0.02f);
+    dt = clampValue(dt, 0.0005f, 0.05f);
 
     updateImu(dt);
   }
 
-  if (
-      static_cast<uint32_t>(
-          nowMicros - previousControlMicros
-      ) >= CONTROL_PERIOD_US
-  ) {
+  // Run stabilization controller at 50 Hz
+  if ((uint32_t)(nowMicros - previousControlMicros) >= CONTROL_PERIOD_US) {
     float dt =
-        static_cast<float>(
-            nowMicros - previousControlMicros
-        ) * 1.0e-6f;
+        (float)(nowMicros - previousControlMicros) * 1.0e-6f;
 
     previousControlMicros = nowMicros;
 
-    dt = clampValue(dt, 0.0005f, 0.02f);
+    dt = clampValue(dt, 0.0005f, 0.05f);
 
     runStabilizationController(dt);
   }
 
-  server.handleClient();
-
-  if (WiFi.status() != WL_CONNECTED) {
-    static uint32_t previousReconnectMillis = 0;
-
-    if (millis() - previousReconnectMillis > 5000) {
-      previousReconnectMillis = millis();
-      WiFi.reconnect();
-    }
-  }
-
-  if (millis() - previousTelemetryMillis >= 500) {
-    previousTelemetryMillis = millis();
-
-    Serial.print("Angle: ");
-    Serial.print(radiansToDegrees(boxAngleRad), 2);
-
-    Serial.print(" deg, rate: ");
-    Serial.print(radiansToDegrees(boxRateRadS), 2);
-
-    Serial.print(" deg/s, wheel: ");
-    Serial.print(motor.shaft_velocity, 2);
-
-    Serial.print(" rad/s, command: ");
-    Serial.print(commandedMotorVoltage, 2);
-
-    Serial.println(" V");
-  }
+  delay(2);
 }
