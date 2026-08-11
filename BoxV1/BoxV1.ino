@@ -69,7 +69,7 @@ constexpr float DRIVER_SUPPLY_VOLTAGE = 12.0f;
 
 // Maximum voltage that the controller may apply to the motor.
 // Start low during testing.
-constexpr float MOTOR_VOLTAGE_LIMIT = 3.0f;
+constexpr float MOTOR_VOLTAGE_LIMIT = 5.0f;
 
 // Reaction-wheel overspeed limit.
 constexpr float MAX_WHEEL_SPEED_RAD_S = 100.0f;
