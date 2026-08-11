@@ -26,6 +26,20 @@ void runStabilizationController(float dt) {
     return;
   }
 
-  commandedMotorVoltage = calculateBoxController(dt);
+  float targetVoltage = calculateBoxController(dt);
+
+  // Maximum voltage change per control update
+  const float MAX_VOLTAGE_STEP = 0.05f;
+
+  if (targetVoltage > commandedMotorVoltage + MAX_VOLTAGE_STEP) {
+    commandedMotorVoltage += MAX_VOLTAGE_STEP;
+  }
+  else if (targetVoltage < commandedMotorVoltage - MAX_VOLTAGE_STEP) {
+    commandedMotorVoltage -= MAX_VOLTAGE_STEP;
+  }
+  else {
+    commandedMotorVoltage = targetVoltage;
+  }
+
   motor.move(commandedMotorVoltage);
 }
