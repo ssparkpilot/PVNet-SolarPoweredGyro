@@ -5,8 +5,8 @@
 TwoWire MPUWire = TwoWire(1);
 Adafruit_MPU6050 mpu;
 
-#define MPU_SDA 32
-#define MPU_SCL 33
+#define MPU_SDA 21
+#define MPU_SCL 22
 
 void setup() {
   Serial.begin(115200);
